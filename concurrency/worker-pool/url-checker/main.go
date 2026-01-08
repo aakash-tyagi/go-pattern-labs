@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 )
@@ -10,6 +11,7 @@ var urls = []string{
 	"google.com",
 	"example.com",
 	"baddomain.com",
+	"huihui.com",
 }
 
 func main() {
@@ -51,18 +53,31 @@ type HealthResult struct {
 
 func worker(workerId int, wg *sync.WaitGroup, jobs chan string, result chan HealthResult) {
 
+	client := http.Client{
+		Timeout: 2 * time.Second,
+	}
+
 	for url := range jobs {
 
 		fmt.Println("worker id ", workerId, " picked url ", url)
-
-		// call http
-		time.Sleep(2 * time.Second)
-
+		ok := CheckURL(client, url)
 		fmt.Println("worker id ", workerId, " checked url ", url)
 		result <- HealthResult{
 			Url: url,
-			Ok:  true,
+			Ok:  ok,
 		}
 		wg.Done()
 	}
+}
+
+func CheckURL(client http.Client, url string) bool {
+	resp, err := client.Get("https://" + url)
+	if err != nil {
+		return false
+	}
+
+	defer resp.Body.Close()
+
+	return resp.StatusCode == http.StatusOK
+
 }

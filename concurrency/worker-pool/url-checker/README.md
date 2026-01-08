@@ -40,4 +40,4 @@ This mirrors real production systems such as background workers and queue consum
 
 1. A fixed number of workers pull URLs from a `jobs` channel
 2. Each worker performs an HTTP request with context
-3. Results are sent to
+3. Results are sent back to main flow.
