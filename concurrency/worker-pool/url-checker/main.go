@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -14,36 +15,54 @@ var urls = []string{
 func main() {
 
 	totalWorker := 5
+	wg := sync.WaitGroup{}
 
 	jobs := make(chan string)
-	result := make(chan map[string]bool)
+	result := make(chan HealthResult)
 
 	for i := 1; i <= totalWorker; i++ {
-		go worker(i, jobs, result)
+		go worker(i, &wg, jobs, result)
 	}
 
-	for i := 0; i < len(urls); i++ {
-		jobs <- urls[i]
-	}
-	close(jobs)
+	wg.Add(len(urls))
 
-	for i := 1; i <= len(urls); i++ {
-		fmt.Println(<-result)
-	}
+	go func() {
+		for i := 0; i < len(urls); i++ {
 
+			jobs <- urls[i]
+		}
+		close(jobs)
+	}()
+
+	go func() {
+		wg.Wait()
+		close(result)
+	}()
+
+	for res := range result {
+		fmt.Println(res)
+	}
 }
 
-func worker(workerId int, jobs chan string, result chan map[string]bool) {
+type HealthResult struct {
+	Url string
+	Ok  bool
+}
+
+func worker(workerId int, wg *sync.WaitGroup, jobs chan string, result chan HealthResult) {
 
 	for url := range jobs {
+
 		fmt.Println("worker id ", workerId, " picked url ", url)
 
 		// call http
 		time.Sleep(2 * time.Second)
 
 		fmt.Println("worker id ", workerId, " checked url ", url)
-		result <- map[string]bool{
-			url: true,
+		result <- HealthResult{
+			Url: url,
+			Ok:  true,
 		}
+		wg.Done()
 	}
 }
