@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sync"
@@ -8,6 +9,12 @@ import (
 )
 
 var urls = []string{
+	"huihui.com",
+	"google.com",
+	"example.com",
+	"baddomain.com",
+	"huihui.com",
+	"huihui.com",
 	"google.com",
 	"example.com",
 	"baddomain.com",
@@ -16,6 +23,11 @@ var urls = []string{
 
 func main() {
 
+	ctx := context.Background()
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	totalWorker := 5
 	wg := sync.WaitGroup{}
 
@@ -23,15 +35,17 @@ func main() {
 	result := make(chan HealthResult)
 
 	for i := 1; i <= totalWorker; i++ {
-		go worker(i, &wg, jobs, result)
+		go worker(ctx, i, &wg, jobs, result)
 	}
-
-	wg.Add(len(urls))
 
 	go func() {
 		for i := 0; i < len(urls); i++ {
-
-			jobs <- urls[i]
+			select {
+			case <-ctx.Done():
+				return
+			case jobs <- urls[i]:
+				wg.Add(1)
+			}
 		}
 		close(jobs)
 	}()
@@ -41,7 +55,16 @@ func main() {
 		close(result)
 	}()
 
+	badUrl := 0
 	for res := range result {
+		if !res.Ok {
+			badUrl++
+		}
+		if badUrl > 2 {
+			fmt.Println("3 bad urls, cancelling execution")
+			cancel()
+		}
+
 		fmt.Println(res)
 	}
 }
@@ -51,27 +74,43 @@ type HealthResult struct {
 	Ok  bool
 }
 
-func worker(workerId int, wg *sync.WaitGroup, jobs chan string, result chan HealthResult) {
+func worker(ctx context.Context, workerId int, wg *sync.WaitGroup, jobs chan string, result chan HealthResult) {
 
 	client := http.Client{
 		Timeout: 2 * time.Second,
 	}
 
-	for url := range jobs {
+	for {
+		select {
+		case <-ctx.Done():
+			return
 
-		fmt.Println("worker id ", workerId, " picked url ", url)
-		ok := CheckURL(client, url)
-		fmt.Println("worker id ", workerId, " checked url ", url)
-		result <- HealthResult{
-			Url: url,
-			Ok:  ok,
+		case url, ok := <-jobs:
+			if !ok {
+				return
+			}
+
+			fmt.Println("worker id ", workerId, " picked url ", url)
+			okUrl := CheckURL(ctx, client, url)
+			fmt.Println("worker id ", workerId, " checked url ", url)
+			result <- HealthResult{
+				Url: url,
+				Ok:  okUrl,
+			}
+			wg.Done()
 		}
-		wg.Done()
 	}
 }
 
-func CheckURL(client http.Client, url string) bool {
-	resp, err := client.Get("https://" + url)
+func CheckURL(ctx context.Context, client http.Client, url string) bool {
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		"http://"+url,
+		nil,
+	)
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return false
 	}
