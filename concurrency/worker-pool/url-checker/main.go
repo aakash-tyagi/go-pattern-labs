@@ -34,6 +34,8 @@ func main() {
 	jobs := make(chan string)
 	result := make(chan HealthResult)
 
+	wg.Add(totalWorker)
+
 	for i := 1; i <= totalWorker; i++ {
 		go worker(ctx, i, &wg, jobs, result)
 	}
@@ -44,7 +46,7 @@ func main() {
 			case <-ctx.Done():
 				return
 			case jobs <- urls[i]:
-				wg.Add(1)
+
 			}
 		}
 		close(jobs)
@@ -79,7 +81,7 @@ func worker(ctx context.Context, workerId int, wg *sync.WaitGroup, jobs chan str
 	client := http.Client{
 		Timeout: 2 * time.Second,
 	}
-
+	defer wg.Done()
 	for {
 		select {
 		case <-ctx.Done():
@@ -97,7 +99,7 @@ func worker(ctx context.Context, workerId int, wg *sync.WaitGroup, jobs chan str
 				Url: url,
 				Ok:  okUrl,
 			}
-			wg.Done()
+
 		}
 	}
 }
